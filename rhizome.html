@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Rhizome — A Map of Technology Criticism</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;1,400&family=DM+Mono:wght@300;400&family=DM+Sans:wght@300;400&display=swap');
+
+  :root {
+    --bg: #0a0a08;
+    --surface: #111110;
+    --border: #222220;
+    --text-primary: #e8e4d9;
+    --text-secondary: #8a8678;
+    --text-dim: #4a4840;
+    --accent: #c8a96e;
+    --accent-dim: rgba(200, 169, 110, 0.15);
+
+    /* Discipline colors */
+    --col-philosophy: #7eb8a4;
+    --col-law: #a07eb8;
+    --col-design: #b8a07e;
+    --col-political: #b87e7e;
+    --col-science: #7e9eb8;
+    --col-literature: #94b87e;
+    --col-media: #b87eae;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text-primary);
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 300;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  /* Header */
+  #header {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    padding: 24px 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    pointer-events: none;
+  }
+
+  #title-block h1 {
+    font-family: 'Playfair Display', serif;
+    font-size: 13px;
+    font-weight: 400;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+
+  #title-block p {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    margin-top: 4px;
+  }
+
+  /* Legend */
+  #legend {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    pointer-events: none;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
+
+  .legend-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* SVG canvas */
+  #canvas {
+    width: 100vw;
+    height: 100vh;
+  }
+
+  /* Node labels */
+  .node-label {
+    font-family: 'Playfair Display', serif;
+    font-size: 11px;
+    fill: var(--text-secondary);
+    pointer-events: none;
+    transition: fill 0.3s;
+  }
+
+  .node-label.active {
+    fill: var(--text-primary);
+  }
+
+  .node-label.dimmed {
+    fill: var(--text-dim);
+    opacity: 0.4;
+  }
+
+  /* Node circles */
+  .node circle {
+    cursor: pointer;
+    transition: all 0.3s;
+  }
+
+  .node circle:hover {
+    filter: brightness(1.4);
+  }
+
+  /* Edge labels */
+  .edge-label {
+    font-family: 'DM Mono', monospace;
+    font-size: 8px;
+    fill: var(--text-dim);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.3s;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .edge-label.visible {
+    opacity: 1;
+  }
+
+  /* Links */
+  .link {
+    stroke: var(--border);
+    stroke-opacity: 0.6;
+    fill: none;
+    transition: all 0.3s;
+  }
+
+  .link.active {
+    stroke-opacity: 1;
+  }
+
+  .link.dimmed {
+    stroke-opacity: 0.05;
+  }
+
+  /* Detail panel */
+  #detail {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: linear-gradient(to top, var(--surface) 60%, transparent);
+    padding: 48px 32px 32px;
+    transform: translateY(100%);
+    transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+    z-index: 50;
+    max-height: 45vh;
+    overflow-y: auto;
+  }
+
+  #detail.open {
+    transform: translateY(0);
+  }
+
+  #detail-inner {
+    max-width: 760px;
+    margin: 0 auto;
+  }
+
+  #detail-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 28px;
+    font-weight: 400;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+
+  #detail-dates {
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    letter-spacing: 0.12em;
+    margin-bottom: 16px;
+  }
+
+  #detail-discipline {
+    display: inline-block;
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 3px 10px;
+    border: 1px solid currentColor;
+    border-radius: 2px;
+    margin-bottom: 16px;
+  }
+
+  #detail-bio {
+    font-size: 13px;
+    line-height: 1.8;
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+  }
+
+  #detail-connections {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .connection-tag {
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    background: var(--accent-dim);
+    border: 1px solid rgba(200, 169, 110, 0.2);
+    border-radius: 2px;
+    color: var(--accent);
+  }
+
+  .connection-tag span {
+    color: var(--text-dim);
+    margin-right: 4px;
+  }
+
+  #close-btn {
+    position: absolute;
+    top: 16px;
+    right: 32px;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    padding: 4px 8px;
+  }
+
+  #close-btn:hover { color: var(--text-primary); }
+
+  /* Instructions */
+  #instructions {
+    position: fixed;
+    bottom: 32px;
+    right: 32px;
+    font-family: 'DM Mono', monospace;
+    font-size: 9px;
+    color: var(--text-dim);
+    letter-spacing: 0.08em;
+    text-align: right;
+    line-height: 1.8;
+    pointer-events: none;
+    transition: opacity 0.5s;
+  }
+
+  #instructions.hidden { opacity: 0; }
+
+  /* Grain overlay */
+  #grain {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 200;
+    opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+    background-size: 256px;
+  }
+
+  scrollbar-width: none;
+  ::-webkit-scrollbar { display: none; }
+</style>
+</head>
+<body>
+
+<div id="grain"></div>
+
+<div id="header">
+  <div id="title-block">
+    <h1>Rhizome</h1>
+    <p>A map of technology criticism — 1960s to present</p>
+  </div>
+  <div id="legend">
+    <div class="legend-item"><div class="legend-dot" style="background:var(--col-philosophy)"></div>Philosophy</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--col-law)"></div>Law & Policy</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--col-design)"></div>Design & HCI</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--col-political)"></div>Political Economy</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--col-science)"></div>Science & Technology Studies</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--col-literature)"></div>Literature & Culture</div>
+    <div class="legend-item"><div class="legend-dot" style="background:var(--col-media)"></div>Media Theory</div>
+  </div>
+</div>
+
+<svg id="canvas"></svg>
+
+<div id="detail">
+  <button id="close-btn">close ✕</button>
+  <div id="detail-inner">
+    <div id="detail-name"></div>
+    <div id="detail-dates"></div>
+    <div id="detail-discipline"></div>
+    <div id="detail-bio"></div>
+    <div id="detail-connections"></div>
+  </div>
+</div>
+
+<div id="instructions">
+  click a node to explore<br>
+  drag to reposition<br>
+  scroll to zoom
+</div>
+
+<script>
+const DISCIPLINE_COLORS = {
+  philosophy: 'var(--col-philosophy)',
+  law: 'var(--col-law)',
+  design: 'var(--col-design)',
+  political: 'var(--col-political)',
+  science: 'var(--col-science)',
+  literature: 'var(--col-literature)',
+  media: 'var(--col-media)',
+};
+
+const thinkers = [
+  {
+    id: 'franklin',
+    name: 'Ursula Franklin',
+    dates: '1921–2016',
+    discipline: 'science',
+    disciplineLabel: 'Science & Technology Studies',
+    weight: 9,
+    bio: 'Physicist, pacifist, Quaker, feminist. Her Massey Lectures (1989) introduced the distinction between holistic and prescriptive technologies — a framework that predicts platform capitalism with alarming precision. Prescriptive technologies don\'t just change what we do; they redistribute agency, removing judgment from the practitioner and encoding it into the system. Her concept of the "culture of compliance" describes what happens to workers and citizens when prescriptive systems become ambient. The most underread thinker in this entire map.',
+    keyWork: 'The Real World of Technology (1989)',
+  },
+  {
+    id: 'illich',
+    name: 'Ivan Illich',
+    dates: '1926–2002',
+    discipline: 'philosophy',
+    disciplineLabel: 'Philosophy / Radical Critique',
+    weight: 9,
+    bio: 'Austrian-Mexican philosopher and priest whose concept of "counterproductivity" — the point at which institutions begin to produce the opposite of their stated purpose — remains one of the sharpest tools in critical theory. His "radical monopoly" concept prefigures enshittification by four decades: when a technology becomes so dominant it destroys the conditions for alternatives to exist. Tools for Conviviality (1973) is the explicit intellectual ancestor of Franklin\'s holistic/prescriptive distinction and Doctorow\'s platform critique.',
+    keyWork: 'Tools for Conviviality (1973)',
+  },
+  {
+    id: 'mumford',
+    name: 'Lewis Mumford',
+    dates: '1895–1990',
+    discipline: 'philosophy',
+    disciplineLabel: 'Philosophy of Technology',
+    weight: 8,
+    bio: 'Historian and philosopher of technology whose concept of the "megamachine" — the organization of human beings into a technical system — anticipated both bureaucratic and platform capitalism. His distinction between "democratic" and "authoritarian" technics (1964) maps almost perfectly onto Franklin\'s holistic/prescriptive axis. The megamachine doesn\'t require malevolent actors; it operates through the logic of scale and specialization. Largely forgotten in mainstream tech discourse; his rehabilitation is overdue.',
+    keyWork: 'Technics and Civilization (1934)',
+  },
+  {
+    id: 'ellul',
+    name: 'Jacques Ellul',
+    dates: '1912–1994',
+    discipline: 'philosophy',
+    disciplineLabel: 'Philosophy / Theology',
+    weight: 8,
+    bio: 'French philosopher and anarchist Christian who argued that "technique" — the totality of methods rationally arrived at and having absolute efficiency — had become the dominant force in modern civilization, displacing both nature and human values. His concept of the "technological system" as self-augmenting and self-justifying anticipates algorithmic governance. Ellul was a pessimist without remedy: he thought technique had captured not just our institutions but our capacity to imagine outside them. The darkest voice on this map.',
+    keyWork: 'The Technological Society (1954)',
+  },
+  {
+    id: 'deleuze',
+    name: 'Gilles Deleuze',
+    dates: '1925–1995',
+    discipline: 'philosophy',
+    disciplineLabel: 'Continental Philosophy',
+    weight: 9,
+    bio: 'His 1990 "Postscript on the Societies of Control" is one of the most prophetic short texts in modern philosophy — written before the web, it describes a shift from Foucault\'s disciplinary societies (confined spaces, molds) to control societies (continuous modulation, open environments, dividuals rather than individuals). The platform is the control society\'s native habitat: not the prison or the factory but the network, the score, the continuous assessment. With Guattari, the rhizome as counter-model to arborescent (hierarchical, root-based) thought.',
+    keyWork: 'Postscript on Societies of Control (1990)',
+  },
+  {
+    id: 'foucault',
+    name: 'Michel Foucault',
+    dates: '1926–1984',
+    discipline: 'philosophy',
+    disciplineLabel: 'Continental Philosophy',
+    weight: 8,
+    bio: 'The panopticon as foundational metaphor for digital surveillance — though Deleuze argued Foucault\'s disciplinary model was already being superseded when he wrote it. Foucault\'s genealogical method, tracing how knowledge and power co-produce each other, remains essential for understanding how "productivity metrics" become truth claims. His concept of biopower — the administration of life itself — finds its contemporary expression in wellness apps, sleep tracking, and the quantified self.',
+    keyWork: 'Discipline and Punish (1975)',
+  },
+  {
+    id: 'fisher',
+    name: 'Mark Fisher',
+    dates: '1968–2017',
+    discipline: 'literature',
+    disciplineLabel: 'Cultural Theory',
+    weight: 9,
+    bio: 'Capitalist realism: the widespread sense that it is easier to imagine the end of the world than the end of capitalism. Fisher\'s great contribution was naming the affective and cultural dimension of what Ellul described structurally — not just that alternatives are foreclosed, but that the capacity to imagine them has atrophied. His work on "depressive hedonia" and the bureaucratization of culture maps directly onto busyness theater: the performance of productivity as the only available identity within systems that have evacuated meaning from work.',
+    keyWork: 'Capitalist Realism (2009)',
+  },
+  {
+    id: 'han',
+    name: 'Byung-Chul Han',
+    dates: '1959–',
+    discipline: 'philosophy',
+    disciplineLabel: 'Philosophy',
+    weight: 8,
+    bio: 'The achievement society internalizes surveillance: we are no longer disciplined by an external Other but by the superego of our own performance metrics. Han\'s burnout society describes the exhaustion produced not by prohibition but by excess positivity — the injunction to optimize, achieve, and perform without limit. His transparency society argues that the demand for total visibility destroys trust, intimacy, and thought itself. The philosophical account of what the SF performance theater produces in bodies and psyches.',
+    keyWork: 'The Burnout Society (2010)',
+  },
+  {
+    id: 'havel',
+    name: 'Václav Havel',
+    dates: '1936–2011',
+    discipline: 'literature',
+    disciplineLabel: 'Philosophy / Literature',
+    weight: 7,
+    bio: 'The greengrocer\'s sign: "Workers of the World, Unite!" The sign is not an expression of belief but a performance of compliance within a system that demands it. Havel\'s analysis of living within ideology — the way systems produce their own self-justifying rituals regardless of anyone\'s genuine belief — is directly applicable to busyness theater and the performance of productivity. The director sending 200 emails is putting up a sign. The system doesn\'t require sincerity; it requires participation.',
+    keyWork: 'The Power of the Powerless (1978)',
+  },
+  {
+    id: 'zuboff',
+    name: 'Shoshana Zuboff',
+    dates: '1951–',
+    discipline: 'political',
+    disciplineLabel: 'Political Economy',
+    weight: 9,
+    bio: 'Surveillance capitalism: the economic logic that drives behavioral modification at scale. Zuboff\'s great contribution is naming the specific economic form — not just surveillance, but the commodification of behavioral data as raw material for prediction products sold to business customers. Google is the originating institution. The employer monitoring Google Workspace data is a downstream expression of the same logic that built the tool. Her framework is the connective tissue between the philosophical critiques and the political economy arguments.',
+    keyWork: 'The Age of Surveillance Capitalism (2019)',
+  },
+  {
+    id: 'doctorow',
+    name: 'Cory Doctorow',
+    dates: '1971–',
+    discipline: 'political',
+    disciplineLabel: 'Political Economy / Activism',
+    weight: 8,
+    bio: 'Enshittification: the lifecycle of platform decay — first good for users, then good for business customers, then good only for the platform itself. Doctorow\'s framework is structurally precise where other critiques remain impressionistic. His concept of "adversarial interoperability" as the mechanism that historically constrained platform power provides the remedial counterpart to the diagnostic. The reform framework is insufficient; structural intervention in ownership and interoperability is required. The most tactically useful voice on this map.',
+    keyWork: 'The Internet Con (2023)',
+  },
+  {
+    id: 'wu',
+    name: 'Tim Wu',
+    dates: '1973–',
+    discipline: 'law',
+    disciplineLabel: 'Law / Political Economy',
+    weight: 8,
+    bio: 'Net neutrality architect and attention monopoly theorist. Wu traces the historical pattern by which each new communication medium — radio, television, cable, internet — begins as a decentralized commons and is progressively captured by concentrated interests. His attention merchants framework names the economic logic: human attention is the commodity, and its capture is the business. The workplace productivity platform as attention merchant — selling concentrated access to workers\' cognitive capacity to employers — is a direct extension of his framework.',
+    keyWork: 'The Attention Merchants (2016)',
+  },
+  {
+    id: 'harris',
+    name: 'Tristan Harris',
+    dates: '1984–',
+    discipline: 'design',
+    disciplineLabel: 'Design / Ethics',
+    weight: 7,
+    bio: 'Emerged from B.J. Fogg\'s Persuasive Technology Lab at Stanford — trained in the science of behavior modification, then experienced a vocational crisis when he saw it deployed at scale inside Google. His 2013 internal memo circulated widely and changed nothing. His Center for Humane Technology operates within a reform framework: better design, better incentives, ethical guidelines. The limitation is that design reform cannot address structural problems of ownership and incentive alignment. But he remains the clearest voice translating these critiques into the language that designers and policymakers can act on.',
+    keyWork: 'How Technology Hijacks People\'s Minds (2016)',
+  },
+  {
+    id: 'fogg',
+    name: 'B.J. Fogg',
+    dates: '1963–',
+    discipline: 'design',
+    disciplineLabel: 'Behavioral Design',
+    weight: 6,
+    bio: 'The Persuasive Technology Lab at Stanford is the institutional origin of much of what critics now critique. Fogg\'s behavior model — motivation, ability, trigger — became the foundational grammar of engagement design. His work is not malicious; it is a rigorous science of behavior change. The ethical problem is that the science was systematically applied to commercial ends without adequate reflection on the power asymmetry between designer and user. Harris is his most prominent dissident student. Fogg\'s presence on this map marks the point where design became an instrument of behavioral modification.',
+    keyWork: 'Persuasive Technology (2003)',
+  },
+  {
+    id: 'haraway',
+    name: 'Donna Haraway',
+    dates: '1944–',
+    discipline: 'science',
+    disciplineLabel: 'Science & Technology Studies',
+    weight: 8,
+    bio: 'The Cyborg Manifesto (1985) dissolved the boundaries between human, animal, and machine before the internet existed — arguing that the boundary was always political rather than natural. Her situated knowledge framework insists that all knowledge is produced from somewhere by someone, a direct challenge to the view-from-nowhere that data analytics claims. Her "staying with the trouble" in later work resists both techno-optimism and apocalypticism in favor of partial, situated, collaborative response. Essential counter-weight to the universalizing tendencies of most political economy critique.',
+    keyWork: 'A Cyborg Manifesto (1985)',
+  },
+  {
+    id: 'scott',
+    name: 'James C. Scott',
+    dates: '1936–2024',
+    discipline: 'political',
+    disciplineLabel: 'Political Anthropology',
+    weight: 8,
+    bio: 'Seeing Like a State: how high modernist states simplify complex social realities to make them legible and administrable — and how this simplification destroys the complexity it was meant to manage. The admin dashboard is Scott\'s modernist state apparatus in miniature: it makes the workforce legible by reducing it to measurable proxies, and then optimizes for the proxy rather than the underlying reality. His concept of "metis" — practical, local, embodied knowledge — is exactly what prescriptive technologies destroy. The employee profile generated by Workspace data is a Scott legibility exercise.',
+    keyWork: 'Seeing Like a State (1998)',
+  },
+  {
+    id: 'stiegler',
+    name: 'Bernard Stiegler',
+    dates: '1952–2020',
+    discipline: 'philosophy',
+    disciplineLabel: 'Continental Philosophy',
+    weight: 8,
+    bio: 'Technology as the condition of human memory and thought — tertiary retention, the externalization of cognition into technical objects. Stiegler\'s pharmacology: every technology is simultaneously poison and remedy, and the question is always who controls the dosage. Google Workspace externalizes organizational memory, judgment, and coordination — and in doing so, atrophies the internal capacities it replaces. His concept of "psychic and collective individuation" provides a framework for understanding what platform dependency does to the capacity for autonomous thought and democratic self-governance.',
+    keyWork: 'Technics and Time (1994)',
+  },
+  {
+    id: 'chun',
+    name: 'Wendy Hui Kyong Chun',
+    dates: '1969–',
+    discipline: 'media',
+    disciplineLabel: 'Media Theory',
+    weight: 7,
+    bio: 'Habitual new media: platforms don\'t just capture attention, they form habits — and habits are the medium through which ideology reproduces itself without conscious decision. Her work on race and digital infrastructure reveals how apparently neutral technical systems encode and reproduce social hierarchies. The "enduring ephemeral" — data that persists beyond its apparent deletion — directly describes the Vault retention system. Her intersectional approach to technology critique is an essential corrective to the predominantly white male voice of most political economy critique on this map.',
+    keyWork: 'Programmed Visions (2011)',
+  },
+  {
+    id: 'yuk_hui',
+    name: 'Yuk Hui',
+    dates: '1982–',
+    discipline: 'philosophy',
+    disciplineLabel: 'Philosophy of Technology',
+    weight: 7,
+    bio: 'Cosmotechnics: the proposition that there is no singular Technology but multiple, culturally-specific relationships between human beings, moral orders, and technical objects. His work challenges the Eurocentrism of most technology philosophy — the assumption that the trajectory of Western technical development is universal and inevitable. Against Ellul\'s monolithic "technique," Hui proposes that different cosmological frameworks produce genuinely different technologies. An essential voice for any map of technology criticism that aspires to non-Western scope.',
+    keyWork: 'Recursivity and Contingency (2019)',
+  },
+  {
+    id: 'klein',
+    name: 'Ezra Klein',
+    dates: '1984–',
+    discipline: 'media',
+    disciplineLabel: 'Journalism / Political Analysis',
+    weight: 6,
+    bio: 'The synthesis voice: Klein\'s strength is assembling these critiques for a policy-literate audience and asking the political economy question — who had the power to make different choices and why didn\'t they? His interviews and writing create the connective tissue between academic critique and public discourse. Less a primary theorist than a crucial node in the dissemination network. His framing of institutional capacity failure as the central problem of our moment intersects directly with climate adaptation discourse.',
+    keyWork: 'Why We\'re Polarized (2020)',
+  },
+  {
+    id: 'winner',
+    name: 'Langdon Winner',
+    dates: '1944–',
+    discipline: 'science',
+    disciplineLabel: 'Science & Technology Studies',
+    weight: 7,
+    bio: 'Do artifacts have politics? Winner\'s foundational 1980 essay argues yes — that technical objects can embody specific forms of authority and social relationships. Robert Moses\'s bridges (built too low for buses, ensuring the poor couldn\'t reach Long Island beaches) are his canonical example. The architecture of Google Workspace — who can see what, who can audit whom, where data flows — embodies a specific political order that is not neutral and not inevitable. Winner is the bridge between philosophy of technology and the practical design question: what values are we building in?',
+    keyWork: 'Do Artifacts Have Politics? (1980)',
+  },
+  {
+    id: 'noble',
+    name: 'Safiya Umoja Noble',
+    dates: '1973–',
+    discipline: 'media',
+    disciplineLabel: 'Media Studies / Critical Race',
+    weight: 7,
+    bio: 'Algorithms of Oppression: search engines are not neutral infrastructure but systems that encode and amplify existing social hierarchies. Noble\'s work grounds the abstract critique of platform power in the concrete experience of communities systematically misrepresented and harmed by algorithmic systems. Her framework is essential for understanding that "productivity metrics" and "performance analytics" are not objective measures but culturally specific judgments encoded in technical systems — with differential consequences across race and gender.',
+    keyWork: 'Algorithms of Oppression (2018)',
+  },
+];
+
+const links = [
+  // Franklin connections
+  { source: 'franklin', target: 'illich', type: 'extends', label: 'extends' },
+  { source: 'franklin', target: 'mumford', type: 'extends', label: 'parallel' },
+  { source: 'franklin', target: 'harris', type: 'prefigures', label: 'prefigures' },
+  { source: 'franklin', target: 'winner', type: 'extends', label: 'shares axis' },
+  { source: 'franklin', target: 'scott', type: 'resonates', label: 'resonates' },
+
+  // Illich connections
+  { source: 'illich', target: 'mumford', type: 'extends', label: 'extends' },
+  { source: 'illich', target: 'ellul', type: 'tension', label: 'in tension' },
+  { source: 'illich', target: 'doctorow', type: 'prefigures', label: 'prefigures' },
+  { source: 'illich', target: 'stiegler', type: 'resonates', label: 'resonates' },
+
+  // Ellul connections
+  { source: 'ellul', target: 'mumford', type: 'tension', label: 'diverges' },
+  { source: 'ellul', target: 'fisher', type: 'prefigures', label: 'prefigures' },
+  { source: 'ellul', target: 'han', type: 'prefigures', label: 'prefigures' },
+  { source: 'ellul', target: 'stiegler', type: 'extends', label: 'extended by' },
+
+  // Deleuze connections
+  { source: 'deleuze', target: 'foucault', type: 'extends', label: 'extends/critiques' },
+  { source: 'deleuze', target: 'han', type: 'prefigures', label: 'prefigures' },
+  { source: 'deleuze', target: 'zuboff', type: 'resonates', label: 'resonates' },
+  { source: 'deleuze', target: 'stiegler', type: 'extends', label: 'extended by' },
+  { source: 'deleuze', target: 'chun', type: 'extends', label: 'extended by' },
+
+  // Foucault connections
+  { source: 'foucault', target: 'zuboff', type: 'prefigures', label: 'prefigures' },
+  { source: 'foucault', target: 'scott', type: 'resonates', label: 'resonates' },
+  { source: 'foucault', target: 'noble', type: 'extends', label: 'extended by' },
+  { source: 'foucault', target: 'han', type: 'tension', label: 'complicates' },
+
+  // Fisher connections
+  { source: 'fisher', target: 'han', type: 'parallel', label: 'parallel' },
+  { source: 'fisher', target: 'havel', type: 'resonates', label: 'resonates' },
+  { source: 'fisher', target: 'zuboff', type: 'resonates', label: 'resonates' },
+
+  // Han connections
+  { source: 'han', target: 'stiegler', type: 'resonates', label: 'resonates' },
+  { source: 'han', target: 'harris', type: 'tension', label: 'structural vs reform' },
+
+  // Havel connections
+  { source: 'havel', target: 'scott', type: 'resonates', label: 'resonates' },
+  { source: 'havel', target: 'fisher', type: 'prefigures', label: 'prefigures' },
+
+  // Zuboff connections
+  { source: 'zuboff', target: 'doctorow', type: 'extends', label: 'complementary' },
+  { source: 'zuboff', target: 'wu', type: 'extends', label: 'extends' },
+  { source: 'zuboff', target: 'noble', type: 'resonates', label: 'resonates' },
+  { source: 'zuboff', target: 'winner', type: 'resonates', label: 'resonates' },
+
+  // Doctorow connections
+  { source: 'doctorow', target: 'wu', type: 'parallel', label: 'parallel' },
+  { source: 'doctorow', target: 'harris', type: 'tension', label: 'structural vs reform' },
+  { source: 'doctorow', target: 'klein', type: 'resonates', label: 'synthesized by' },
+
+  // Wu connections
+  { source: 'wu', target: 'harris', type: 'resonates', label: 'resonates' },
+  { source: 'wu', target: 'klein', type: 'resonates', label: 'synthesized by' },
+
+  // Harris connections
+  { source: 'harris', target: 'fogg', type: 'extends', label: 'dissents from' },
+  { source: 'harris', target: 'noble', type: 'tension', label: 'blind spot' },
+
+  // Haraway connections
+  { source: 'haraway', target: 'franklin', type: 'parallel', label: 'parallel' },
+  { source: 'haraway', target: 'chun', type: 'extends', label: 'extended by' },
+  { source: 'haraway', target: 'noble', type: 'extends', label: 'extended by' },
+  { source: 'haraway', target: 'yuk_hui', type: 'resonates', label: 'resonates' },
+
+  // Scott connections
+  { source: 'scott', target: 'winner', type: 'resonates', label: 'resonates' },
+  { source: 'scott', target: 'zuboff', type: 'resonates', label: 'resonates' },
+
+  // Stiegler connections
+  { source: 'stiegler', target: 'chun', type: 'resonates', label: 'resonates' },
+  { source: 'stiegler', target: 'yuk_hui', type: 'tension', label: 'in dialogue' },
+
+  // Chun connections
+  { source: 'chun', target: 'noble', type: 'extends', label: 'parallel' },
+
+  // Yuk Hui connections
+  { source: 'yuk_hui', target: 'ellul', type: 'tension', label: 'counters' },
+  { source: 'yuk_hui', target: 'mumford', type: 'tension', label: 'counters' },
+
+  // Winner connections
+  { source: 'winner', target: 'scott', type: 'parallel', label: 'parallel' },
+
+  // Noble connections
+  { source: 'noble', target: 'chun', type: 'parallel', label: 'parallel' },
+
+  // Klein
+  { source: 'klein', target: 'wu', type: 'extends', label: 'amplifies' },
+  { source: 'klein', target: 'zuboff', type: 'extends', label: 'amplifies' },
+];
+
+// Link type colors
+const linkColors = {
+  extends: 'rgba(126, 184, 164, 0.5)',
+  prefigures: 'rgba(200, 169, 110, 0.5)',
+  tension: 'rgba(184, 126, 126, 0.5)',
+  resonates: 'rgba(126, 158, 184, 0.5)',
+  parallel: 'rgba(148, 184, 126, 0.5)',
+};
+
+const linkWidths = {
+  extends: 1.5,
+  prefigures: 1.5,
+  tension: 1,
+  resonates: 1,
+  parallel: 1,
+};
+
+// Build adjacency
+const adjacency = {};
+thinkers.forEach(t => adjacency[t.id] = new Set());
+links.forEach(l => {
+  adjacency[l.source].add(l.target);
+  adjacency[l.target].add(l.source);
+});
+
+const disciplineColorMap = {
+  philosophy: '#7eb8a4',
+  law: '#a07eb8',
+  design: '#b8a07e',
+  political: '#b87e7e',
+  science: '#7e9eb8',
+  literature: '#94b87e',
+  media: '#b87eae',
+};
+
+// D3 setup
+const svg = d3.select('#canvas');
+const width = window.innerWidth;
+const height = window.innerHeight;
+svg.attr('width', width).attr('height', height);
+
+const g = svg.append('g');
+
+// Zoom
+const zoom = d3.zoom()
+  .scaleExtent([0.3, 3])
+  .on('zoom', e => g.attr('transform', e.transform));
+svg.call(zoom);
+
+// Simulation
+const simulation = d3.forceSimulation(thinkers)
+  .force('link', d3.forceLink(links).id(d => d.id).distance(120).strength(0.4))
+  .force('charge', d3.forceManyBody().strength(-600))
+  .force('center', d3.forceCenter(width / 2, height / 2))
+  .force('collision', d3.forceCollide().radius(d => d.weight * 4 + 30));
+
+// Defs for arrow markers
+const defs = svg.append('defs');
+Object.entries(linkColors).forEach(([type, color]) => {
+  defs.append('marker')
+    .attr('id', `arrow-${type}`)
+    .attr('viewBox', '0 -4 8 8')
+    .attr('refX', 20)
+    .attr('refY', 0)
+    .attr('markerWidth', 4)
+    .attr('markerHeight', 4)
+    .attr('orient', 'auto')
+    .append('path')
+    .attr('d', 'M0,-4L8,0L0,4')
+    .attr('fill', color);
+});
+
+// Draw links
+const linkGroup = g.append('g').attr('class', 'links');
+const linkElements = linkGroup.selectAll('.link')
+  .data(links)
+  .enter()
+  .append('line')
+  .attr('class', 'link')
+  .attr('stroke', d => linkColors[d.type] || '#333')
+  .attr('stroke-width', d => linkWidths[d.type] || 1)
+  .attr('marker-end', d => `url(#arrow-${d.type})`);
+
+// Edge labels
+const edgeLabelGroup = g.append('g').attr('class', 'edge-labels');
+const edgeLabels = edgeLabelGroup.selectAll('.edge-label')
+  .data(links)
+  .enter()
+  .append('text')
+  .attr('class', 'edge-label')
+  .attr('text-anchor', 'middle')
+  .text(d => d.label);
+
+// Draw nodes
+const nodeGroup = g.append('g').attr('class', 'nodes');
+const nodeElements = nodeGroup.selectAll('.node')
+  .data(thinkers)
+  .enter()
+  .append('g')
+  .attr('class', 'node')
+  .call(d3.drag()
+    .on('start', (e, d) => {
+      if (!e.active) simulation.alphaTarget(0.3).restart();
+      d.fx = d.x; d.fy = d.y;
+    })
+    .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+    .on('end', (e, d) => {
+      if (!e.active) simulation.alphaTarget(0);
+      d.fx = null; d.fy = null;
+    })
+  )
+  .on('click', (e, d) => {
+    e.stopPropagation();
+    selectNode(d);
+  });
+
+nodeElements.append('circle')
+  .attr('r', d => d.weight * 3.2)
+  .attr('fill', d => disciplineColorMap[d.discipline] || '#666')
+  .attr('fill-opacity', 0.15)
+  .attr('stroke', d => disciplineColorMap[d.discipline] || '#666')
+  .attr('stroke-width', 1.5)
+  .attr('stroke-opacity', 0.7);
+
+// Inner dot
+nodeElements.append('circle')
+  .attr('r', 2.5)
+  .attr('fill', d => disciplineColorMap[d.discipline] || '#666')
+  .attr('fill-opacity', 0.9);
+
+// Labels
+const labelElements = nodeElements.append('text')
+  .attr('class', 'node-label')
+  .attr('dy', d => d.weight * 3.2 + 14)
+  .attr('text-anchor', 'middle')
+  .text(d => d.name);
+
+// Tick
+simulation.on('tick', () => {
+  linkElements
+    .attr('x1', d => d.source.x)
+    .attr('y1', d => d.source.y)
+    .attr('x2', d => d.target.x)
+    .attr('y2', d => d.target.y);
+
+  edgeLabels
+    .attr('x', d => (d.source.x + d.target.x) / 2)
+    .attr('y', d => (d.source.y + d.target.y) / 2);
+
+  nodeElements.attr('transform', d => `translate(${d.x},${d.y})`);
+});
+
+// Selection state
+let selectedId = null;
+
+function selectNode(d) {
+  selectedId = d.id;
+  const neighbors = adjacency[d.id];
+
+  // Update node states
+  nodeElements.selectAll('circle')
+    .attr('fill-opacity', n => n.id === d.id ? 0.3 : neighbors.has(n.id) ? 0.2 : 0.05)
+    .attr('stroke-opacity', n => n.id === d.id ? 1 : neighbors.has(n.id) ? 0.7 : 0.15);
+
+  labelElements
+    .attr('class', n => {
+      if (n.id === d.id) return 'node-label active';
+      if (neighbors.has(n.id)) return 'node-label';
+      return 'node-label dimmed';
+    });
+
+  // Update links
+  linkElements
+    .attr('class', l => {
+      const active = l.source.id === d.id || l.target.id === d.id;
+      return active ? 'link active' : 'link dimmed';
+    })
+    .attr('stroke-opacity', l => {
+      const active = l.source.id === d.id || l.target.id === d.id;
+      return active ? 0.9 : 0.04;
+    });
+
+  // Edge labels
+  edgeLabels
+    .attr('class', l => {
+      const active = l.source.id === d.id || l.target.id === d.id;
+      return active ? 'edge-label visible' : 'edge-label';
+    });
+
+  // Detail panel
+  showDetail(d);
+  document.getElementById('instructions').classList.add('hidden');
+}
+
+function showDetail(d) {
+  const panel = document.getElementById('detail');
+  document.getElementById('detail-name').textContent = d.name;
+  document.getElementById('detail-dates').textContent = d.dates + '  ·  ' + d.keyWork;
+  
+  const discEl = document.getElementById('detail-discipline');
+  discEl.textContent = d.disciplineLabel;
+  discEl.style.color = disciplineColorMap[d.discipline];
+  discEl.style.borderColor = disciplineColorMap[d.discipline];
+  
+  document.getElementById('detail-bio').textContent = d.bio;
+
+  // Connection tags
+  const connEl = document.getElementById('detail-connections');
+  connEl.innerHTML = '';
+  const connLinks = links.filter(l => l.source.id === d.id || l.target.id === d.id || 
+    (typeof l.source === 'string' && (l.source === d.id || l.target === d.id)));
+  
+  connLinks.forEach(l => {
+    const otherId = (l.source.id || l.source) === d.id ? (l.target.id || l.target) : (l.source.id || l.source);
+    const other = thinkers.find(t => t.id === otherId);
+    if (!other) return;
+    const tag = document.createElement('div');
+    tag.className = 'connection-tag';
+    tag.innerHTML = `<span>${l.label}</span>${other.name}`;
+    connEl.appendChild(tag);
+  });
+
+  panel.classList.add('open');
+}
+
+function clearSelection() {
+  selectedId = null;
+  nodeElements.selectAll('circle')
+    .attr('fill-opacity', 0.15)
+    .attr('stroke-opacity', 0.7);
+  labelElements.attr('class', 'node-label');
+  linkElements.attr('class', 'link').attr('stroke-opacity', 0.6);
+  edgeLabels.attr('class', 'edge-label');
+  document.getElementById('detail').classList.remove('open');
+  document.getElementById('instructions').classList.remove('hidden');
+}
+
+svg.on('click', clearSelection);
+document.getElementById('close-btn').addEventListener('click', clearSelection);
+
+// Resize
+window.addEventListener('resize', () => {
+  const w = window.innerWidth;
+  const h = window.innerHeight;
+  svg.attr('width', w).attr('height', h);
+  simulation.force('center', d3.forceCenter(w / 2, h / 2));
+  simulation.alpha(0.3).restart();
+});
+</script>
+</body>
+</html>
